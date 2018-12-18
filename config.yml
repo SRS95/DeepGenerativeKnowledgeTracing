@@ -1,5 +1,5 @@
 batch_size: 64
 seq_len: 50
-num_lstm_units: 128
-num_lstm_layers: 4
+num_lstm_units: 4
+num_lstm_layers: 2
 embedding_dim: 2
