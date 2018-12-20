@@ -8,14 +8,20 @@ from torch.autograd import Variable
 class RNN(nn.Module):
     def __init__(self, voc_len, voc_freq, embedding_dim, num_lstm_units, num_lstm_layers, device):
         super().__init__()
+        
+        # Number of distinct characterrs
         self.voc_len = voc_len
+        
+        # Prior over all characters
         self.voc_freq = torch.Tensor(voc_freq)
 
+        # Trainable embeddings
         self.embedding = nn.Embedding(
             num_embeddings=voc_len,
             embedding_dim=embedding_dim
         )
 
+        # Our model
         self.lstm = nn.LSTM(
             input_size=embedding_dim,
             hidden_size=num_lstm_units,
@@ -23,35 +29,43 @@ class RNN(nn.Module):
             batch_first=True
         )
 
+        # Make initial LSTM hidden state trainable
+        # 1 in second dim because assuming we don't know batch size yet
+        self.h_0 = nn.Parameter(torch.zeros(self.lstm.num_layers, 1, self.lstm.hidden_size), requires_grad=True)
+        self.c_0 = nn.Parameter(torch.zeros(self.lstm.num_layers, 1, self.lstm.hidden_size), requires_grad=True)
+
+        # Fully connected layer used to get logits
         self.h2o = nn.Linear(num_lstm_units, voc_len)
+
         self.device = device
         self.to(device)
 
 
-    # Variable makes the initial hidden state trainable
-    # TODO: incorporate this into model
-    def init_hidden(self, batch_size=1):
-        return torch.zeros(self.lstm.num_layers, batch_size, self.lstm.hidden_size)
-
-
+    """
+    Predict the next token's logits given an input token and a hidden state.
+    :param input [torch.tensor]: The input token tensor with shape
+        (batch_size, 1), where batch_size is the number of inputs to process
+        in parallel.
+    :param hidden [(torch.tensor, torch.tensor)]: The hidden state, or None if
+        it's the first token.
+    :return [(torch.tensor, (torch.tensor, torch.tensor))]: A tuple consisting of
+        the logits for the next token, of shape (batch_size, num_tokens), and
+        the next hidden state.
+    """
     def forward(self, input, hidden):
-        """
-        Predict the next token's logits given an input token and a hidden state.
-        :param input [torch.tensor]: The input token tensor with shape
-            (batch_size, 1), where batch_size is the number of inputs to process
-            in parallel.
-        :param hidden [(torch.tensor, torch.tensor)]: The hidden state, or None if
-            it's the first token.
-        :return [(torch.tensor, (torch.tensor, torch.tensor))]: A tuple consisting of
-            the logits for the next token, of shape (batch_size, num_tokens), and
-            the next hidden state.
-        """
-        embeddings = self.embedding(input)
-        if hidden is None:
-            lstm, (h, c) = self.lstm(embeddings)
-        else:
-            lstm, (h, c) = self.lstm(embeddings, hidden)
+        # If it's the first token
+        if hidden == None:
+            # Stretch h_0 and c_0 along second dim
+            batch_size = input.shape[0]
+            h_0 = self.h_0.repeat(1, batch_size, 1)
+            c_0 = self.c_0.repeat(1, batch_size, 1)
+            hidden = (h_0, c_0)
 
+        # Convert characters to trainable embeddings and get lstm outputs
+        embeddings = self.embedding(input)
+        lstm, (h, c) = self.lstm(embeddings, hidden)
+
+        # Pass lstm output through FC layer to get logits
         lstm = lstm.contiguous().view(-1, lstm.shape[2])
         logits = self.h2o(lstm)
         return logits, (h, c)
@@ -63,35 +77,43 @@ class RNN(nn.Module):
         # Assume all interactions are same length
         batch_size = batch.shape[0]
         seq_len = batch[0].shape[0]
-
-        # Not using init_hidden 
-        h_prev = None
+ 
+        # Use prior over all characters to get the log-lik for first token
         nll = torch.sum(-torch.log(self.voc_freq[batch[:, 0]]))
-        softmax = nn.Softmax()
+        h_prev = None
+        softmax = nn.Softmax(dim=1)
 
-        for idx in range(1, seq_len):
+        for idx in range(seq_len - 1):
             curr_token = batch[:, idx].view(-1, 1)
             logits, h_prev = self.forward(curr_token, h_prev)
             log_probs = torch.log(softmax(logits))
 
-            curr_token_onehot = torch.zeros(batch_size, self.voc_len)
-            curr_token_onehot.scatter_(1, curr_token, 1)
-            nll -= torch.sum(curr_token_onehot * log_probs)
+            next_token = batch[:, idx + 1].view(-1, 1)
+            next_token_onehot = torch.zeros(batch_size, self.voc_len)
+            next_token_onehot.scatter_(1, next_token, 1)
 
+            nll -= torch.sum(next_token_onehot * log_probs)
+        
         return nll
 
 
+    # Compute the negative log likelihood of a test batch of interactions
+    def test_loss(self, batch):
+        with torch.no_grad():
+            return self.loss(batch)
+
+
+    """
+    Sample a student interaction string of length `seq_len` from the model.
+    :param seq_len [int]: String length
+    :return [list]: A list of length `seq_len` that contains each token in order.
+                    Tokens should be numbers from {0, 1, 2, ..., voc_len}.
+    """
     def sample(self, seq_len):
-        """
-        Sample a student interaction string of length `seq_len` from the model.
-        :param seq_len [int]: String length
-        :return [list]: A list of length `seq_len` that contains each token in order.
-                        Tokens should be numbers from {0, 1, 2, ..., voc_len}.
-        """
         voc_freq = self.voc_freq
         with torch.no_grad():
             # The starting hidden state of LSTM is None
-            h_prev = self.init_hidden()
+            h_prev = None
             # Accumulate tokens into texts
             interaction = []
             # Randomly draw the starting token and convert it to a torch.tensor
@@ -113,7 +135,7 @@ class RNN(nn.Module):
                 next_logits, next_hidden_state = self.forward(curr_token, h_prev)
 
                 # Use softmax to convert the logits into a probability distribution
-                next_probabilities = np.reshape(softmax_calulator(next_logits).numpy(), (657,))
+                next_probabilities = np.reshape(softmax_calulator(next_logits).numpy(), (self.voc_len,))
 
                 # Sample a token from the probability distribution computed by softmax
                 # Set curr_token to be that token
@@ -126,12 +148,12 @@ class RNN(nn.Module):
         return interaction
 
 
+    """
+    Compute the probability for each string in `strings`
+    :param string [np.ndarray]: an integer array of length N.
+    :return [float]: the log-likelihood
+    """
     def compute_prob(self, string):
-        """
-        Compute the probability for each string in `strings`
-        :param string [np.ndarray]: an integer array of length N.
-        :return [float]: the log-likelihood
-        """
         voc_freq = self.voc_freq
         with torch.no_grad():
             # Initialize LSTM hidden state
@@ -166,3 +188,4 @@ class RNN(nn.Module):
                 stringIndex += 1
 
             return ll
+

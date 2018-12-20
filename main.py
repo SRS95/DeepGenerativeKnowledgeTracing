@@ -21,6 +21,7 @@ def parse_args():
     parser.add_argument('--data_dir', type=str, default='data/', help='Directory of naive_c2_q50_s4000_v0.csv')
     parser.add_argument('--log_dir', type=str, default='logs/', help='Directory of putting logs')
     parser.add_argument('--gpu', action='store_true', help="Turn on GPU mode")
+    parser.add_argument('--train', action='store_true', default=False, help="Train model from scratch")
 
     args = parser.parse_args()
     return args
@@ -56,10 +57,8 @@ def main():
     else:
         device = torch.device('cpu')
 
-
     # Create character-level RNN for data of the form in dataset
     dataset = StudentInteractionsDataset(csv_file='data/naive_c2_q50_s4000_v0.csv', root_dir='data/')
-
     rnn = RNN(
         voc_len=dataset.voc_len,
         voc_freq = dataset.voc_freq,
@@ -70,16 +69,24 @@ def main():
     )
 
 
-    # Split data into train and test sets
-    train_size = int(0.8 * dataset.data.shape[0])
-    test_size = dataset.data.shape[0] - train_size
-    train_set, test_set = random_split(dataset, [train_size, test_size])
+    if args.train:
+        # Split data into train and test sets
+        train_size = int(0.8 * dataset.data.shape[0])
+        test_size = dataset.data.shape[0] - train_size
+        train_set, test_set = random_split(dataset, [train_size, test_size])
 
-    # Create train and test dataloaders
-    train_loader = DataLoader(dataset=train_set, batch_size=config.batch_size, shuffle=True)
-    test_loader = DataLoader(dataset=test_set, batch_size=config.batch_size, shuffle=True)
+        # Create train and test dataloaders
+        train_loader = DataLoader(dataset=train_set, batch_size=config.batch_size, shuffle=True)
+        test_loader = DataLoader(dataset=test_set, batch_size=config.batch_size, shuffle=True)
 
-    train(args, rnn, train_loader, test_loader)
+        train(args, rnn, train_loader, test_loader)
+
+    else:
+        rnn.load_state_dict(torch.load(os.path.join(args.checkpoint_dir, 'model-00950.pt'), map_location=device))
+        print("RNN weights restored.")
+
+        sample = rnn.sample(SAMPLE_SEQ_LEN)
+        print (sample)
 
 
 if __name__ == '__main__':

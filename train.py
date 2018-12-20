@@ -4,9 +4,18 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import optim
+import os
+import utils as ut
 
 num_epochs = 1000
 learning_rate = 0.001
+
+
+def test(rnn, test_loader):
+	test_epoch_loss = 0.
+	for batch_idx, data in enumerate(test_loader):
+		test_epoch_loss += rnn.test_loss(data)
+	return test_epoch_loss
 
 
 def train(args, rnn, train_loader, test_loader):
@@ -29,14 +38,14 @@ def train(args, rnn, train_loader, test_loader):
 			loss.backward()
 			optimizer.step()
 
-		print ("Loss for epoch " + str(epoch) + ": " + str(epoch_loss))
-			
+		# Log summaries and save model every 50 epochs
+		if epoch % 50 == 0: 
+			ut.save_model(rnn, epoch, args.checkpoint_dir)
+			test_loss = test(rnn, test_loader)
+			ut.make_log(epoch_loss, test_loss, epoch, args.log_dir)
 
 
-			
+		print ("Train loss for epoch " + str(epoch) + ": " + str(epoch_loss))
 
 
 
-
-
-	
