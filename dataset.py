@@ -5,7 +5,6 @@ from torch.utils.data import Dataset
 
 
 class StudentInteractionsDataset(Dataset):
-    
 
     def __init__(self, csv_file, root_dir, transform=None):
         # Required by Pytorch dataset class

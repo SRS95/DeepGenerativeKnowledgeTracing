@@ -149,7 +149,7 @@ class RNN(nn.Module):
 
 
     """
-    Compute the probability for each string in `strings`
+    Compute the log-likelihood for each string in `strings`
     :param string [np.ndarray]: an integer array of length N.
     :return [float]: the log-likelihood
     """
@@ -162,7 +162,7 @@ class RNN(nn.Module):
             x = string[None, 0, None]
             x = torch.from_numpy(x).type(torch.int64).to(self.device)
             # The log-likelihood of the first token.
-            # You should accumulate log-likelihoods of all other tokens to ll as well.
+            # We will accumulate log-likelihoods of all other tokens to ll as well.
             ll = np.log(voc_freq[string[0]])
 
             # This will be used to compute probability distributions given logits

@@ -22,6 +22,7 @@ def parse_args():
     parser.add_argument('--log_dir', type=str, default='logs/', help='Directory of putting logs')
     parser.add_argument('--gpu', action='store_true', help="Turn on GPU mode")
     parser.add_argument('--train', action='store_true', default=False, help="Train model from scratch")
+    parser.add_argument('--num_samples', type=int, default=4000, help="Number of samples to generate")
 
     args = parser.parse_args()
     return args
@@ -58,7 +59,7 @@ def main():
         device = torch.device('cpu')
 
     # Create character-level RNN for data of the form in dataset
-    dataset = StudentInteractionsDataset(csv_file='data/naive_c2_q50_s4000_v0.csv', root_dir='data/')
+    dataset = StudentInteractionsDataset(csv_file='data/naive_c5_q50_s4000_v1.csv', root_dir='data/')
     rnn = RNN(
         voc_len=dataset.voc_len,
         voc_freq = dataset.voc_freq,
@@ -82,11 +83,17 @@ def main():
         train(args, rnn, train_loader, test_loader)
 
     else:
-        rnn.load_state_dict(torch.load(os.path.join(args.checkpoint_dir, 'model-00950.pt'), map_location=device))
+        rnn.load_state_dict(torch.load(os.path.join(args.checkpoint_dir, 'model-07150.pt'), map_location=device))
         print("RNN weights restored.")
 
-        sample = rnn.sample(SAMPLE_SEQ_LEN)
-        print (sample)
+        samples = []
+        for i in range(args.num_samples):
+           samples.append(rnn.sample(SAMPLE_SEQ_LEN))
+
+        samples = pd.DataFrame(samples)
+        file_path = "data/generated/samples_" + str(args.num_samples) + ".csv"
+        samples.to_csv(file_path, index=False)
+
 
 
 if __name__ == '__main__':

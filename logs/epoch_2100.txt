@@ -1,0 +1,2 @@
+Train loss at epoch 2100: tensor(92951.5391, grad_fn=<AddBackward0>)
+Test loss at epoch 2100: tensor(23468.4199)

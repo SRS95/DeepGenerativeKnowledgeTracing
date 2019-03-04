@@ -7,8 +7,8 @@ from torch import optim
 import os
 import utils as ut
 
-num_epochs = 1000
-learning_rate = 0.001
+num_epochs = 10000
+learning_rate = 0.01
 
 
 def test(rnn, test_loader):
